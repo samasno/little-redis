@@ -44,6 +44,7 @@ func get(args []Value) Value {
 
 	SETsMu.RLock()
 	v, ok := SETs[k]
+	SETsMu.RUnlock()
 	if !ok {
 		return NIL
 	}
@@ -55,10 +56,9 @@ func set(args []Value) Value {
 	if len(args) != 2 {
 		return Value{typ: ERROR, str: fmt.Sprintf("ERROR: Expected 2 args got %d", len(args))}
 	}
-
 	k, v := args[0].bul, args[1].bul
 
-	SETsMu.Lock() // use mutex for concurrency safety
+	SETsMu.Lock()
 	SETs[k] = v
 	SETsMu.Unlock()
 
@@ -94,12 +94,10 @@ func hget(args []Value) Value {
 	h, k := args[0].bul, args[1].bul
 
 	HSETsMu.RLock()
-
 	_, ok := HSETs[h]
 	if !ok {
 		return NIL
 	}
-
 	v, ok := HSETs[h][k]
 	if !ok {
 		return NIL

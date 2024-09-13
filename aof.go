@@ -44,6 +44,7 @@ func (a *AppendOnlyFile) Write(v Value) error {
 	_, err := a.file.Write(v.Marshal())
 
 	if err != nil {
+		a.mu.Unlock()
 		return err
 	}
 

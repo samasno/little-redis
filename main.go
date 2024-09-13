@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -10,17 +11,19 @@ import (
 )
 
 var db string
+var port int
 
 func main() {
 	flag.StringVar(&db, "db", "", "file path to store key value pairs. will be loaded into memory on start")
+	flag.IntVar(&port, "port", 8080, "port to accept tcp connections")
 	flag.Parse()
 
 	if db == "" {
-		log.Println("no ")
 		panic("db file is required")
 	}
 
-	srv, err := net.Listen("tcp", ":6379")
+	addr := fmt.Sprintf(":%d", port)
+	srv, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Println("failed to start server")
 		panic(err.Error())
@@ -77,7 +80,6 @@ func handleConnection(conn net.Conn, options ...RequestOptions) {
 		}
 
 		response := HandleRequest(request)
-
 		conn.Write(response.Marshal())
 	}
 }

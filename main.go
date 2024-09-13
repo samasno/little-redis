@@ -2,40 +2,68 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"io"
 	"log"
 	"net"
 	"strconv"
 )
 
+var db string
+
 func main() {
+	flag.StringVar(&db, "db", "", "file path to store key value pairs. will be loaded into memory on start")
+	flag.Parse()
+
+	if db == "" {
+		log.Println("no ")
+		panic("db file is required")
+	}
+
 	srv, err := net.Listen("tcp", ":6379")
 	if err != nil {
 		log.Println("failed to start server")
 		panic(err.Error())
 	}
+	defer srv.Close()
+
+	aof, err := NewAof(db)
+	if err != nil {
+		panic(err)
+	}
+	defer aof.Close()
+
+	log.Println("reading backups into memory")
+	loadBackup(aof)
+	log.Println("done reading backups")
+
+	backupRequests := func(v Value) {
+		aof.Write(v)
+	}
 
 	for {
 		conn, err := srv.Accept()
 		if err == net.ErrClosed {
-			println("server closed")
+			log.Println("server closed")
 			break
 		}
 
 		if err != nil {
-			println("server error" + err.Error())
+			log.Println("server error" + err.Error())
 			panic(err.Error())
 		}
 
-		go handleConnection(conn)
+		go handleConnection(conn, backupRequests)
 	}
+
+	log.Println("Closing server ")
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, options ...RequestOptions) {
 	defer conn.Close()
 	for {
 		resp := NewResp(conn)
-		value, err := resp.Read()
+		request, err := resp.Read()
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -44,10 +72,33 @@ func handleConnection(conn net.Conn) {
 			log.Println("error reading from client: ", err.Error())
 			break
 		}
-		println(value.typ)
+		for _, opt := range options {
+			opt(request)
+		}
 
-		conn.Write([]byte("+OK\r\n"))
+		response := HandleRequest(request)
+
+		conn.Write(response.Marshal())
 	}
+}
+
+func loadBackup(db io.Reader) error {
+	for {
+		resp := NewResp(db)
+		request, err := resp.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			log.Println("error reading from client: ", err.Error())
+			break
+		}
+
+		HandleRequest(request)
+	}
+
+	return nil
 }
 
 const (
@@ -82,6 +133,10 @@ func (v *Value) Marshal() []byte {
 	default:
 		return []byte{}
 	}
+}
+
+func (v *Value) String() string {
+	return string(v.Marshal())
 }
 
 func (v *Value) marshalString() []byte {
@@ -173,15 +228,13 @@ func (r *Resp) readString() (Value, error) {
 }
 
 func (r *Resp) readArray() (Value, error) {
-	// get length of array
 	v := Value{}
 	v.typ = ARRAY
-	// make new value
 	l, _, err := r.readInteger()
 	if err != nil {
 		return v, err
 	}
-	// for each value, read and add to array
+
 	v.arr = []Value{}
 	for i := 0; i < l; i++ {
 		val, err := r.Read()
@@ -251,3 +304,5 @@ func (r *Resp) readInteger() (x int, n int, err error) {
 func NewResp(rd io.Reader) *Resp {
 	return &Resp{reader: bufio.NewReader(rd)}
 }
+
+type RequestOptions func(v Value)
